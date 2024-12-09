@@ -204,7 +204,9 @@ void handleModeChange(const char *newMode)
     conMsgNum = 0x03; // Recommencer à 3 pour maintenir le décalage
   }
   // Envoyer la chaîne via LoRa
+  radio.standby();
   int txState = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
+  radio.startReceive();
   if (txState == RADIOLIB_ERR_NONE)
   {
     // Serial.print("Mode transmis avec succès : ");
@@ -310,6 +312,7 @@ void txConfiguration()
   state = radio.setRxBandwidth(250.0);
   state = radio.setPreambleLength(4);
   state = radio.setSyncWord(custom_network_id, sizeof(custom_network_id));
+  state = radio.startReceive();
 }
 //****************************************************************************
 void connectToMqtt()
@@ -439,7 +442,9 @@ void txExtSonTemp()
   }
   Serial.println();
   // Transmettre la chaine TempExTx
+  radio.standby();
   int state = radio.transmit(TempExTx, sizeof(TempExTx));
+  radio.startReceive();
 }
 //****************************************************************************
 void txfriConMsg()
@@ -450,7 +455,7 @@ void txfriConMsg()
   conMsgArrays[conMsgIndex][2] = custom_friCon_id;
   // Serial.print(F("Envoi de la trame Con index "));
   // Serial.println(conMsgIndex);
-
+  radio.standby();
   int state = radio.transmit(conMsgArrays[conMsgIndex], 10); // 10 est la taille de chaque tableau TxByteArrConX
   if (state == RADIOLIB_ERR_NONE)
   {
@@ -460,7 +465,7 @@ void txfriConMsg()
   {
     Serial.println(F("Erreur trans. Con"));
   }
-
+  state = radio.startReceive();
   // Incrémenter conMsgNum de 4 et gérer le débordement
   conMsgNum += 4;
   // Si conMsgNum dépasse 255, le remettre à une valeur valide (par exemple, 3)
@@ -512,6 +517,7 @@ bool associateDevice(
       deviceTxArr[6] = byteArr[6];
       delay(100);
       // Envoi de la chaine d'association
+      radio.standby();
       int txState = radio.transmit(deviceTxArr, deviceTxArrLen);
       if (txState == RADIOLIB_ERR_NONE)
       {
@@ -520,7 +526,7 @@ bool associateDevice(
         {
           custom_network_id[i] = byteArr[len - 4 + i];
         }
-
+        radio.startReceive();
         preferences.begin("net-conf", false);
         preferences.putBytes("net_id", custom_network_id, sizeof(custom_network_id));
         preferences.putUChar(idKey, byteArr[2]); // Stocker l'ID du device
@@ -656,6 +662,7 @@ void setup()
   {
     onCon = true;
   }
+  
 }
 //****************************************************************************
 void adaptMod(uint8_t modeValue)
@@ -700,8 +707,8 @@ void handleRadioPacket(byte *byteArr, int len)
   Serial.printf("RECEIVED [%2d] : ", len);
   char message[255];
   message[0] = '\0';
-
-  if (len == 23)
+ 
+  if (len == 23 && byteArr[1] == 0x08)
   { // Check if the length is 23 bytes
 
     // Extract bytes 16 and 17
@@ -726,6 +733,7 @@ void handleRadioPacket(byte *byteArr, int len)
       TxByteArrConRep[3] = byteArr[3];
       memcpy(&TxByteArrConRep[7], &byteArr[15], 41); // Copie 41 octets depuis byteArr[15] dans TxByteArrConRep[7]
       // Envoi de la chaine d'association
+      radio.standby();
       int txState = radio.transmit(TxByteArrConRep, sizeof(TxByteArrConRep));
       if (txState == RADIOLIB_ERR_NONE)
       {
@@ -739,6 +747,7 @@ void handleRadioPacket(byte *byteArr, int len)
         Serial.println("Erreur lors de la transmission !");
       }
     }
+    radio.startReceive();
   }
   else if (len == 55 && waitingForResponse)
   {
@@ -759,11 +768,12 @@ void handleRadioPacket(byte *byteArr, int len)
 void loop()
 {
   byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
-  int state = radio.receive(byteArr, 0);
+  int state = radio.readData(byteArr, 0);
   if (state == RADIOLIB_ERR_NONE)
   {
     int len = radio.getPacketLength();
     handleRadioPacket(byteArr, len);
+    radio.startReceive();
   }
   if (eraseNvsFrisquet == "ON")
   {
@@ -817,7 +827,7 @@ void loop()
     ArduinoOTA.handle();
 
     // Compteur pour limiter la déclaration des topic
-    if (counter >= 1000)
+    if (counter >= 10000)
     {
       connectToTopic();
       counter = 0;
@@ -839,6 +849,7 @@ void loop()
         // Réenvoi toutes les 2 secondes
         if (currentTime - lastTxModeTime >= retryInterval)
         {
+          radio.standby();
           int state = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
           if (state == RADIOLIB_ERR_NONE)
           {
@@ -848,10 +859,19 @@ void loop()
           {
             Serial.println("Erreur de ré-envoi de TxByteArrConMod");
           }
+          radio.startReceive();
           lastTxModeTime = currentTime;
         }
       }
     }
+    byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
+  int state = radio.readData(byteArr, 0);
+  if (state == RADIOLIB_ERR_NONE)
+  {
+    int len = radio.getPacketLength();
+    handleRadioPacket(byteArr, len);
+    radio.startReceive();
+  }
   }
   client.loop();
   updateDisplay(); // Mettre à jour l'affichage si nécessaire
