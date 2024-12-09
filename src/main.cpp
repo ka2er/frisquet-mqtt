@@ -42,8 +42,6 @@ unsigned long startWaitTime = 0;
 unsigned long lastTxModeTime = 0;
 const unsigned long maxWaitTime = 240000; // 2 minutes en ms
 const unsigned long retryInterval = 2500; // 2 secondes en ms
-bool onSon = false;
-bool onCon = false;
 
 // Drapeaux pour indiquer si les données ont changé
 bool tempAmbianteChanged = false;
@@ -263,6 +261,7 @@ void callback(char *topic, byte *payload, unsigned int length)
       modeFrisquet = String(message);
       modeFrisquetChanged = true;
       handleModeChange(message);
+      startWaitTime = millis(); // On note le début de l’attente
       // client.publish("homeassistant/select/frisquet/mode/state", message);
     }
   }
@@ -437,8 +436,8 @@ void txExtSonTemp()
   // Serial.print("Payload Sonde transmit: ");
   for (int i = 0; i < sizeof(TempExTx); i++)
   {
-    // Serial.printf("%02X ", TempExTx[i]);
-    // Serial.print(" ");
+    Serial.printf("%02X ", TempExTx[i]);
+    Serial.print(" ");
   }
   Serial.println();
   // Transmettre la chaine TempExTx
@@ -515,6 +514,7 @@ bool associateDevice(
       deviceTxArr[4] = byteArr[4] | 0x80; // Ajouter 0x80 au 5eme byte
       deviceTxArr[5] = byteArr[5];
       deviceTxArr[6] = byteArr[6];
+
       delay(100);
       // Envoi de la chaine d'association
       radio.standby();
@@ -792,27 +792,36 @@ void loop()
   {
     unsigned long currentTime = millis();
     // Vérifier si 10 minutes se sont écoulées depuis la dernière transmission
-    if (onSon)
+    if (currentTime - lastTxExtSonTime >= txExtSonInterval)
     {
       // Vérifier si custom_extSon_id n'est pas égal à 0 byte
-      if (currentTime - lastTxExtSonTime >= txExtSonInterval)
+      if (memcmp(custom_network_id, "\xFF\xFF\xFF\xFF", 4) != 0 && custom_extSon_id != 0x00)
       {
         txExtSonTemp(); // Appeler la fonction pour transmettre les données
+      }
+      else
+      {
+        Serial.println(F("Id sonde externe non connue"));
       }
       // Mettre à jour le temps de la dernière transmission
       lastTxExtSonTime = currentTime;
     }
     // Vérifier si c'est le moment de démarrer l'envoi des 4 trames
-    if (onCon)
+    if (currentTime - lastConMsgTime >= conMsgInterval)
     {
       // Vérifier si custom_friCon_id n'est pas égal à 0 byte
-      if (currentTime - lastConMsgTime >= conMsgInterval)
+      if (memcmp(custom_network_id, "\xFF\xFF\xFF\xFF", 4) != 0 && custom_friCon_id != 0x00)
       {
         // On remet à zéro l'index et on indique qu'il faut envoyer 4 trames
         conMsgIndex = 0;
         conMsgToSendCount = 4;
         lastConMsgTime = currentTime; // on remet le timer à zéro
       }
+      else
+      {
+        Serial.println(F("Id frisquet connect non connue"));
+      }
+      // On remet à zéro l'index et on indique qu'il faut envoyer 4 trames
     }
 
     // Si on a des trames à envoyer depuis connect
@@ -827,7 +836,7 @@ void loop()
     ArduinoOTA.handle();
 
     // Compteur pour limiter la déclaration des topic
-    if (counter >= 10000)
+    if (counter >= 1000)
     {
       connectToTopic();
       counter = 0;
@@ -838,7 +847,7 @@ void loop()
     {
       unsigned long currentTime = millis();
 
-      // Vérification du timeout des 2 minutes
+      // Vérification du timeout des 4 minutes
       if (currentTime - startWaitTime >= maxWaitTime)
       {
         waitingForResponse = false;
@@ -849,17 +858,8 @@ void loop()
         // Réenvoi toutes les 2 secondes
         if (currentTime - lastTxModeTime >= retryInterval)
         {
-          radio.standby();
-          int state = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
-          if (state == RADIOLIB_ERR_NONE)
-          {
-            // Serial.println("Ré-envoi de TxByteArrConMod");
-          }
-          else
-          {
-            Serial.println("Erreur de ré-envoi de TxByteArrConMod");
-          }
-          radio.startReceive();
+          handleModeChange(modeFrisquet.c_str());
+          //int state = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
           lastTxModeTime = currentTime;
         }
       }
