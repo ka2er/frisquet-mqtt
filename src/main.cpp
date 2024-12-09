@@ -322,11 +322,10 @@ void connectToMqtt()
     Serial.println(F("Connecting to MQTT..."));
     if (client.connect("ESP32 Frisquet", mqttUsername, mqttPassword))
     {
-      // Serial.println(F("Connected to MQTT"));
     }
     else
     {
-      Serial.print(F("Failed to connect to MQTT, rc="));
+      Serial.print(F("Failed to connect MQTT, rc="));
       Serial.print(F(client.state()));
       Serial.println(F(" Retrying in 5 seconds..."));
       delay(5000);
@@ -434,7 +433,7 @@ void txExtSonTemp()
   TempExTx[15] = extSonTempBytes[0]; // Remplacer le 16ème byte par l'octet de poids fort de extSonTemp
   TempExTx[16] = extSonTempBytes[1]; // Remplacer le 17ème byte par l'octet de poids faible de extSonTemp
   // Afficher le payload dans la console
-  // Serial.print("Payload Sonde transmit: ");
+  // Serial.print("Sonde transmit: ");
   for (int i = 0; i < sizeof(TempExTx); i++)
   {
     Serial.printf("%02X ", TempExTx[i]);
