@@ -10,10 +10,12 @@
 #include "image.h"
 #include "conf.h"
 
-SX1262 radio = new Module(SS, DIO0, RST_LoRa, BUSY_LoRa);
+// Initialisation correcte du Module et de SX1262
+Module* module = new Module(SS, DIO0, RST_LoRa, BUSY_LoRa);
+SX1262 radio = SX1262(module);
 Preferences preferences;
 unsigned long lastTxExtSonTime = 0;            // Variable dernière transmission sonde
-const unsigned long txExtSonInterval = 600000; // Interval de transmission en millisecondes (10 minutes)
+const unsigned long txExtSonInterval = 60000; // Interval de transmission en millisecondes (10 minutes)
 unsigned long lastConMsgTime = 0;
 const unsigned long conMsgInterval = 600000; // 10 minutes
 String DateTimeRes;
@@ -758,13 +760,16 @@ void handleRadioPacket(byte *byteArr, int len)
 //****************************************************************************
 void loop()
 {
-  byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
-  int state = radio.readData(byteArr, 0);
-  if (state == RADIOLIB_ERR_NONE)
+  if (radio.available())
   {
-    int len = radio.getPacketLength();
-    handleRadioPacket(byteArr, len);
-    radio.startReceive();
+    byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
+    int state = radio.readData(byteArr, sizeof(byteArr));
+    if (state == RADIOLIB_ERR_NONE)
+    {
+      int len = radio.getPacketLength();
+      handleRadioPacket(byteArr, len);
+      radio.startReceive();
+    }
   }
   if (eraseNvsFrisquet == "ON")
   {
@@ -855,14 +860,6 @@ void loop()
         }
       }
     }
-    byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
-  int state = radio.readData(byteArr, 0);
-  if (state == RADIOLIB_ERR_NONE)
-  {
-    int len = radio.getPacketLength();
-    handleRadioPacket(byteArr, len);
-    radio.startReceive();
-  }
   }
   client.loop();
   updateDisplay(); // Mettre à jour l'affichage si nécessaire
