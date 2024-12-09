@@ -11,10 +11,10 @@
 #include "conf.h"
 
 // Initialisation correcte du Module et de SX1262
-Module* module = new Module(SS, DIO0, RST_LoRa, BUSY_LoRa);
+Module *module = new Module(SS, DIO0, RST_LoRa, BUSY_LoRa);
 SX1262 radio = SX1262(module);
 Preferences preferences;
-unsigned long lastTxExtSonTime = 0;            // Variable dernière transmission sonde
+unsigned long lastTxExtSonTime = 0;           // Variable dernière transmission sonde
 const unsigned long txExtSonInterval = 60000; // Interval de transmission en millisecondes (10 minutes)
 unsigned long lastConMsgTime = 0;
 const unsigned long conMsgInterval = 600000; // 10 minutes
@@ -654,7 +654,7 @@ void setup()
   connectToMqtt();
   connectToTopic();
   client.setCallback(callback);
-  preferences.end(); // Fermez la mémoire NVS ici  
+  preferences.end(); // Fermez la mémoire NVS ici
 }
 //****************************************************************************
 void adaptMod(uint8_t modeValue)
@@ -699,7 +699,7 @@ void handleRadioPacket(byte *byteArr, int len)
   Serial.printf("RECEIVED [%2d] : ", len);
   char message[255];
   message[0] = '\0';
- 
+
   if (len == 23 && byteArr[1] == 0x08)
   { // Check if the length is 23 bytes
 
@@ -854,7 +854,7 @@ void loop()
         if (currentTime - lastTxModeTime >= retryInterval)
         {
           handleModeChange(modeFrisquet.c_str());
-          //int state = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
+          // int state = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
           lastTxModeTime = currentTime;
         }
       }
