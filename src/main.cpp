@@ -212,7 +212,6 @@ void handleModeChange(const char *newMode)
     // Serial.print("Mode transmis avec succès : ");
     // Serial.println(newMode);
     waitingForResponse = true;
-    startWaitTime = millis(); // On note le début de l’attente
   }
   else
   {
