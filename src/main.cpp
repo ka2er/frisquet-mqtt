@@ -653,16 +653,7 @@ void setup()
   connectToMqtt();
   connectToTopic();
   client.setCallback(callback);
-  preferences.end(); // Fermez la mémoire NVS ici
-  if (memcmp(custom_network_id, "\xFF\xFF\xFF\xFF", 4) != 0 && custom_extSon_id != 0x00)
-  {
-    onSon = true;
-  }
-  if (memcmp(custom_network_id, "\xFF\xFF\xFF\xFF", 4) != 0 && custom_friCon_id != 0x00)
-  {
-    onCon = true;
-  }
-  
+  preferences.end(); // Fermez la mémoire NVS ici  
 }
 //****************************************************************************
 void adaptMod(uint8_t modeValue)
