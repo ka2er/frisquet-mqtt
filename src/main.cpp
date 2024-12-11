@@ -312,7 +312,10 @@ void txConfiguration()
   state = radio.setRxBandwidth(250.0);
   state = radio.setPreambleLength(4);
   state = radio.setSyncWord(custom_network_id, sizeof(custom_network_id));
-  state = radio.startReceive();
+if (state != RADIOLIB_ERR_NONE) {
+    Serial.println("Initialisation radio échouée !");
+    while (true);
+  }
 }
 //****************************************************************************
 void connectToMqtt()
@@ -617,45 +620,6 @@ bool assFriCon()
 //****************************************************************************
 void initOTA();
 //****************************************************************************
-void setup()
-{
-  Serial.begin(115200);
-  Serial.println(F("Booting"));
-  WiFi.mode(WIFI_STA);
-  WiFi.setHostname("ESP32Frisquet");
-  WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED)
-  {
-    Serial.println(F("Connection Failed! Rebooting..."));
-    delay(5000);
-    ESP.restart();
-  }
-
-  initNvs(); // écrit dans la nvs les bytes nécéssaires
-
-  // Initialize OLED display
-  Heltec.begin(true /*DisplayEnable Enable*/, false /*LoRa Disable*/, true /*Serial Enable*/);
-  Heltec.display->init();
-  // Heltec.display->flipScreenVertically();
-  Heltec.display->setFont(ArialMT_Plain_10);
-  Heltec.display->clear();
-  Heltec.display->drawXbm(0, 0, 128, 64, myLogo);
-  Heltec.display->display();
-
-  txConfiguration();
-  initOTA();
-  Serial.println(F("Ready"));
-  Serial.print(F("IP address: "));
-  Serial.println(WiFi.localIP());
-  // Initialisation de la connexion MQTT
-  client.setServer(mqttServer, mqttPort);
-  client.setBufferSize(2048);
-  connectToMqtt();
-  connectToTopic();
-  client.setCallback(callback);
-  preferences.end(); // Fermez la mémoire NVS ici
-}
-//****************************************************************************
 void adaptMod(uint8_t modeValue)
 {
   const char *topic = "homeassistant/select/frisquet/mode/state"; // Topic MQTT pour le mode
@@ -755,20 +719,65 @@ void handleRadioPacket(byte *byteArr, int len)
   }
   Serial.println(F(""));
 }
-//****************************************************************************
-void loop()
-{
-  if (radio.available())
-  {
-    byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
+//************************************************************
+void onReceive()
+ {
+  byte byteArr[RADIOLIB_SX126X_MAX_PACKET_LENGTH];
     int state = radio.readData(byteArr, sizeof(byteArr));
     if (state == RADIOLIB_ERR_NONE)
     {
       int len = radio.getPacketLength();
       handleRadioPacket(byteArr, len);
-      radio.startReceive();
     }
+}
+//****************************************************************************
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println(F("Booting"));
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname("ESP32Frisquet");
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.println(F("Connection Failed! Rebooting..."));
+    delay(5000);
+    ESP.restart();
   }
+
+  initNvs(); // écrit dans la nvs les bytes nécéssaires
+
+  // Initialize OLED display
+  Heltec.begin(true /*DisplayEnable Enable*/, false /*LoRa Disable*/, true /*Serial Enable*/);
+  Heltec.display->init();
+  // Heltec.display->flipScreenVertically();
+  Heltec.display->setFont(ArialMT_Plain_10);
+  Heltec.display->clear();
+  Heltec.display->drawXbm(0, 0, 128, 64, myLogo);
+  Heltec.display->display();
+
+  txConfiguration();
+  initOTA();
+  Serial.println(F("Ready"));
+  Serial.print(F("IP address: "));
+  Serial.println(WiFi.localIP());
+  // Initialisation de la connexion MQTT
+  client.setServer(mqttServer, mqttPort);
+  client.setBufferSize(2048);
+  connectToMqtt();
+  connectToTopic();
+  client.setCallback(callback);
+
+ // Définir l'action sur DIO1
+  //radio.setDio1Action(onReceive);
+  radio.setPacketReceivedAction(onReceive);
+  // Lancer l'écoute asynchrone
+  radio.startReceive(5000);
+  preferences.end(); // Fermez la mémoire NVS ici
+}
+//****************************************************************************
+void loop()
+{
   if (eraseNvsFrisquet == "ON")
   {
     eraseNvs();
@@ -830,7 +839,7 @@ void loop()
     ArduinoOTA.handle();
 
     // Compteur pour limiter la déclaration des topic
-    if (counter >= 1000)
+    if (counter >= 100000)
     {
       connectToTopic();
       counter = 0;
