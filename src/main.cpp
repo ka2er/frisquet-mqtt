@@ -1,18 +1,17 @@
-#include <Arduino.h>
-#include <RadioLib.h>
+//#include <Arduino.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
-#include <heltec.h>
+#include <heltec_unofficial.h>
 #include <Preferences.h>
 #include "image.h"
 #include "conf.h"
 
 // Initialisation correcte du Module et de SX1262
-Module *module = new Module(SS, DIO0, RST_LoRa, BUSY_LoRa);
-SX1262 radio = SX1262(module);
+//Module *module = new Module(SS, DIO1, RST_LoRa, BUSY_LoRa);
+//SX1262 radio = SX1262(module);
 Preferences preferences;
 unsigned long lastTxExtSonTime = 0;           // Variable dernière transmission sonde
 const unsigned long txExtSonInterval = 60000; // Interval de transmission en millisecondes (10 minutes)
@@ -44,7 +43,7 @@ unsigned long startWaitTime = 0;
 unsigned long lastTxModeTime = 0;
 const unsigned long maxWaitTime = 240000; // 2 minutes en ms
 const unsigned long retryInterval = 2500; // 2 secondes en ms
-
+volatile bool rxFlag = false;
 // Drapeaux pour indiquer si les données ont changé
 bool tempAmbianteChanged = false;
 bool tempExterieureChanged = false;
@@ -98,6 +97,10 @@ void publishMessage(const char *topic, const char *payload)
   }
 }
 //****************************************************************************
+void rx() {
+  rxFlag = true;
+}
+//****************************************************************************
 void eraseNvs()
 {
   preferences.begin("net-conf", false); // Ouvrir la mémoire NVS en mode lecture/écriture
@@ -130,13 +133,13 @@ void updateDisplay()
 {
   if (tempAmbianteChanged || tempExterieureChanged || tempConsigneChanged || modeFrisquetChanged)
   {
-    Heltec.display->clear();
-    Heltec.display->drawString(0, 0, "Net: " + byteArrayToHexString(custom_network_id, sizeof(custom_network_id)));
-    Heltec.display->drawString(0, 11, "SonID: " + byteArrayToHexString(&custom_extSon_id, 1) + " ConID: " + byteArrayToHexString(&custom_friCon_id, 1));
-    Heltec.display->drawString(0, 22, "T° Amb: " + tempAmbiante + "°C " + "T° Ext: " + tempExterieure + "°C");
-    Heltec.display->drawString(0, 33, "T° Con: " + tempConsigne + "°C" + "Mode: " + modeFrisquet);
+    display.clear();
+    display.drawString(0, 0, "Net: " + byteArrayToHexString(custom_network_id, sizeof(custom_network_id)));
+    display.drawString(0, 11, "SonID: " + byteArrayToHexString(&custom_extSon_id, 1) + " ConID: " + byteArrayToHexString(&custom_friCon_id, 1));
+    display.drawString(0, 22, "T° Amb: " + tempAmbiante + "°C " + "T° Ext: " + tempExterieure + "°C");
+    display.drawString(0, 33, "T° Con: " + tempConsigne + "°C" + "Mode: " + modeFrisquet);
 
-    Heltec.display->display();
+    display.display();
     tempAmbianteChanged = false;
     tempExterieureChanged = false;
     tempConsigneChanged = false;
@@ -144,13 +147,13 @@ void updateDisplay()
   }
   else if (assSonFrisquetChanged || assConFrisquetChanged)
   {
-    Heltec.display->clear();
-    Heltec.display->drawString(0, 0, "Net: " + byteArrayToHexString(custom_network_id, sizeof(custom_network_id)));
-    Heltec.display->drawString(0, 11, "SonID: " + byteArrayToHexString(&custom_extSon_id, 1) + " ConID: " + byteArrayToHexString(&custom_friCon_id, 1));
-    Heltec.display->drawString(0, 22, "Ass. sonde en cours: " + assSonFrisquet);
-    Heltec.display->drawString(0, 33, "Ass. connect en cours: " + assConFrisquet);
+    display.clear();
+    display.drawString(0, 0, "Net: " + byteArrayToHexString(custom_network_id, sizeof(custom_network_id)));
+    display.drawString(0, 11, "SonID: " + byteArrayToHexString(&custom_extSon_id, 1) + " ConID: " + byteArrayToHexString(&custom_friCon_id, 1));
+    display.drawString(0, 22, "Ass. sonde en cours: " + assSonFrisquet);
+    display.drawString(0, 33, "Ass. connect en cours: " + assConFrisquet);
 
-    Heltec.display->display();
+    display.display();
     assSonFrisquetChanged = false;
     assConFrisquetChanged = false;
   }
@@ -204,9 +207,9 @@ void handleModeChange(const char *newMode)
     conMsgNum = 0x03; // Recommencer à 3 pour maintenir le décalage
   }
   // Envoyer la chaîne via LoRa
-  radio.standby();
+  //radio.standby();
   int txState = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
-  radio.startReceive();
+  RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
   if (txState == RADIOLIB_ERR_NONE)
   {
     // Serial.print("Mode transmis avec succès : ");
@@ -305,17 +308,19 @@ void callback(char *topic, byte *payload, unsigned int length)
 //****************************************************************************
 void txConfiguration()
 {
-  int state = radio.beginFSK();
-  state = radio.setFrequency(868.96);
-  state = radio.setBitRate(25.0);
-  state = radio.setFrequencyDeviation(50.0);
-  state = radio.setRxBandwidth(250.0);
-  state = radio.setPreambleLength(4);
-  state = radio.setSyncWord(custom_network_id, sizeof(custom_network_id));
+  int state =   RADIOLIB_OR_HALT(radio.beginFSK());
+  radio.setDio1Action(rx);
+  state = RADIOLIB_OR_HALT(radio.setFrequency(868.96));
+  state = RADIOLIB_OR_HALT(radio.setBitRate(25.0));
+  state = RADIOLIB_OR_HALT(radio.setFrequencyDeviation(50.0));
+  state = RADIOLIB_OR_HALT(radio.setRxBandwidth(250.0));
+  state = RADIOLIB_OR_HALT(radio.setPreambleLength(4));
+  state = RADIOLIB_OR_HALT(radio.setSyncWord(custom_network_id, sizeof(custom_network_id)));
 if (state != RADIOLIB_ERR_NONE) {
     Serial.println("Initialisation radio échouée !");
     while (true);
   }
+  RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
 }
 //****************************************************************************
 void connectToMqtt()
@@ -446,8 +451,8 @@ void txExtSonTemp()
   // Transmettre la chaine TempExTx
   radio.standby();
   int state = radio.transmit(TempExTx, sizeof(TempExTx));
-  radio.startReceive();
-}
+  RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+  }
 //****************************************************************************
 void txfriConMsg()
 {
@@ -467,7 +472,7 @@ void txfriConMsg()
   {
     Serial.println(F("Erreur trans. Con"));
   }
-  state = radio.startReceive();
+  state =   RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
   // Incrémenter conMsgNum de 4 et gérer le débordement
   conMsgNum += 4;
   // Si conMsgNum dépasse 255, le remettre à une valeur valide (par exemple, 3)
@@ -529,7 +534,7 @@ bool associateDevice(
         {
           custom_network_id[i] = byteArr[len - 4 + i];
         }
-        radio.startReceive();
+        RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
         preferences.begin("net-conf", false);
         preferences.putBytes("net_id", custom_network_id, sizeof(custom_network_id));
         preferences.putUChar(idKey, byteArr[2]); // Stocker l'ID du device
@@ -702,7 +707,7 @@ void handleRadioPacket(byte *byteArr, int len)
         Serial.println("Erreur lors de la transmission !");
       }
     }
-    radio.startReceive();
+      RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
   }
   else if (len == 55 && waitingForResponse)
   {
@@ -728,11 +733,13 @@ void onReceive()
     {
       int len = radio.getPacketLength();
       handleRadioPacket(byteArr, len);
+      RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
     }
 }
 //****************************************************************************
 void setup()
 {
+  heltec_setup();
   Serial.begin(115200);
   Serial.println(F("Booting"));
   WiFi.mode(WIFI_STA);
@@ -748,13 +755,13 @@ void setup()
   initNvs(); // écrit dans la nvs les bytes nécéssaires
 
   // Initialize OLED display
-  Heltec.begin(true /*DisplayEnable Enable*/, false /*LoRa Disable*/, true /*Serial Enable*/);
-  Heltec.display->init();
-  // Heltec.display->flipScreenVertically();
-  Heltec.display->setFont(ArialMT_Plain_10);
-  Heltec.display->clear();
-  Heltec.display->drawXbm(0, 0, 128, 64, myLogo);
-  Heltec.display->display();
+  //Heltec.begin(true /*DisplayEnable Enable*/, false /*LoRa Disable*/, true /*Serial Enable*/);
+  display.init();
+  // display.flipScreenVertically();
+  display.setFont(ArialMT_Plain_10);
+  display.clear();
+  display.drawXbm(0, 0, 128, 64, myLogo);
+  display.display();
 
   txConfiguration();
   initOTA();
@@ -769,15 +776,21 @@ void setup()
   client.setCallback(callback);
 
  // Définir l'action sur DIO1
-  //radio.setDio1Action(onReceive);
-  radio.setPacketReceivedAction(onReceive);
+// Set the callback function for received packets
+  //radio.setPacketReceivedAction(onReceive);
   // Lancer l'écoute asynchrone
-  radio.startReceive(5000);
+  //RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
   preferences.end(); // Fermez la mémoire NVS ici
 }
 //****************************************************************************
 void loop()
 {
+  heltec_loop();
+  
+  if (rxFlag) {
+    rxFlag = false;
+    onReceive();
+}
   if (eraseNvsFrisquet == "ON")
   {
     eraseNvs();
