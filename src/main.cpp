@@ -1,4 +1,9 @@
-//#include <Arduino.h>
+#define FSK_FREQUENCY       868.96   // Fréquence en MHz (par exemple, 433 MHz)
+#define FSK_BITRATE         25.0     // Débit de données en bauds (par exemple, 1200 baud)
+#define FSK_FREQUENCY_DEV   50.0     // Déviation de fréquence en Hz (par exemple, 2500 Hz)
+//#define HELTEC_NO_RADIO_INSTANCE
+//#define FSK_RX_BAND   200.0
+#include <Arduino.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -8,10 +13,14 @@
 #include <Preferences.h>
 #include "image.h"
 #include "conf.h"
+#include <SPI.h>
+
+
 
 // Initialisation correcte du Module et de SX1262
 //Module *module = new Module(SS, DIO1, RST_LoRa, BUSY_LoRa);
 //SX1262 radio = SX1262(module);
+//SX1262 radio = new Module(SS, DIO1, RST_LoRa, BUSY_LoRa);
 Preferences preferences;
 unsigned long lastTxExtSonTime = 0;           // Variable dernière transmission sonde
 const unsigned long txExtSonInterval = 60000; // Interval de transmission en millisecondes (10 minutes)
@@ -208,8 +217,8 @@ void handleModeChange(const char *newMode)
   }
   // Envoyer la chaîne via LoRa
   //radio.standby();
-  int txState = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
-  RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+  int txState = RADIOLIB(radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod)));
+  RADIOLIB(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
   if (txState == RADIOLIB_ERR_NONE)
   {
     // Serial.print("Mode transmis avec succès : ");
@@ -308,19 +317,44 @@ void callback(char *topic, byte *payload, unsigned int length)
 //****************************************************************************
 void txConfiguration()
 {
-  int state =   RADIOLIB_OR_HALT(radio.beginFSK());
-  radio.setDio1Action(rx);
-  state = RADIOLIB_OR_HALT(radio.setFrequency(868.96));
-  state = RADIOLIB_OR_HALT(radio.setBitRate(25.0));
-  state = RADIOLIB_OR_HALT(radio.setFrequencyDeviation(50.0));
-  state = RADIOLIB_OR_HALT(radio.setRxBandwidth(250.0));
-  state = RADIOLIB_OR_HALT(radio.setPreambleLength(4));
-  state = RADIOLIB_OR_HALT(radio.setSyncWord(custom_network_id, sizeof(custom_network_id)));
-if (state != RADIOLIB_ERR_NONE) {
+  // Initialiser le module radio en mode FSK avec les paramètres définis
+  //SPI.begin();
+  int state = radio.beginFSK(FSK_FREQUENCY, FSK_BITRATE, FSK_FREQUENCY_DEV);
+  
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.print("Erreur d'initialisation : ");
+    Serial.println(state);
     Serial.println("Initialisation radio échouée !");
-    while (true);
   }
-  RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+  
+  // Configurer l'action pour DIO1
+  //radio.setDio1Action(rx);
+  
+  // Configurer la longueur du préambule
+  state = radio.setPreambleLength(4);
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.println("Erreur de configuration de la longueur du préambule !");
+    Serial.println(state);
+  }
+  //state = radio.setRxBandwidth(200.0);
+  //if (state != RADIOLIB_ERR_NONE) {
+  //  Serial.println("Erreur de configuration bandwith");
+  //  Serial.println(state);
+  //  }
+  // Configurer le mot de synchronisation
+  uint8_t custom_network_id2[] = {0x0A, 0xEF, 0xBD, 0xF5, 0x0A, 0xEF, 0xBD, 0xF5};
+  state = radio.setSyncWord(custom_network_id2, sizeof(custom_network_id2));
+  if (state != RADIOLIB_ERR_NONE) {
+    Serial.println("Erreur de configuration du mot de synchronisation !");
+    Serial.println(state);
+  }
+
+  // Lancer la réception
+  //state = radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+  //if (state != RADIOLIB_ERR_NONE) {
+  //  Serial.println("Erreur de démarrage de la réception !");
+  //  Serial.println(state);
+  //}
 }
 //****************************************************************************
 void connectToMqtt()
@@ -449,9 +483,19 @@ void txExtSonTemp()
   }
   Serial.println();
   // Transmettre la chaine TempExTx
-  radio.standby();
+  //radio.standby();
   int state = radio.transmit(TempExTx, sizeof(TempExTx));
-  RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+  if (state == RADIOLIB_ERR_NONE)
+  {
+     Serial.println(F("Transmission Con réussie"));
+     //radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+  }
+  else
+  {
+    Serial.println(F("Erreur trans. temp ext."));
+    Serial.println(state);
+    txConfiguration();
+  }
   }
 //****************************************************************************
 void txfriConMsg()
@@ -466,13 +510,13 @@ void txfriConMsg()
   int state = radio.transmit(conMsgArrays[conMsgIndex], 10); // 10 est la taille de chaque tableau TxByteArrConX
   if (state == RADIOLIB_ERR_NONE)
   {
-    // Serial.println(F("Transmission Con réussie"));
+     Serial.println(F("Transmission Con réussie"));
   }
   else
   {
     Serial.println(F("Erreur trans. Con"));
   }
-  state =   RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+  state =   radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
   // Incrémenter conMsgNum de 4 et gérer le débordement
   conMsgNum += 4;
   // Si conMsgNum dépasse 255, le remettre à une valeur valide (par exemple, 3)
@@ -534,7 +578,7 @@ bool associateDevice(
         {
           custom_network_id[i] = byteArr[len - 4 + i];
         }
-        RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+        radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
         preferences.begin("net-conf", false);
         preferences.putBytes("net_id", custom_network_id, sizeof(custom_network_id));
         preferences.putUChar(idKey, byteArr[2]); // Stocker l'ID du device
@@ -707,7 +751,7 @@ void handleRadioPacket(byte *byteArr, int len)
         Serial.println("Erreur lors de la transmission !");
       }
     }
-      RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+      radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
   }
   else if (len == 55 && waitingForResponse)
   {
@@ -733,7 +777,7 @@ void onReceive()
     {
       int len = radio.getPacketLength();
       handleRadioPacket(byteArr, len);
-      RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+      radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
     }
 }
 //****************************************************************************
@@ -777,9 +821,9 @@ void setup()
 
  // Définir l'action sur DIO1
 // Set the callback function for received packets
-  //radio.setPacketReceivedAction(onReceive);
+  //RADIOLIB(radio.setPacketReceivedAction(onReceive));
   // Lancer l'écoute asynchrone
-  //RADIOLIB_OR_HALT(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
+  //RADIOLIB(radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF));
   preferences.end(); // Fermez la mémoire NVS ici
 }
 //****************************************************************************
@@ -875,7 +919,6 @@ void loop()
         if (currentTime - lastTxModeTime >= retryInterval)
         {
           handleModeChange(modeFrisquet.c_str());
-          // int state = radio.transmit(TxByteArrConMod, sizeof(TxByteArrConMod));
           lastTxModeTime = currentTime;
         }
       }
